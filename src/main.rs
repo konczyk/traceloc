@@ -1,5 +1,5 @@
 use crate::core::memory::estimate_edge_memory;
-use crate::ingest::synthetic::{SyntheticConfig, SyntheticEdge, generate};
+use crate::ingest::synthetic::{generate, SyntheticConfig};
 
 pub mod algo;
 pub mod core;
