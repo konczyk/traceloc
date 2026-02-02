@@ -1,6 +1,6 @@
 use crate::core::ids::NodeId;
 
-struct GraphBuilder {
+pub struct GraphBuilder {
     graph: Graph,
 }
 

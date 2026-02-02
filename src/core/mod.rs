@@ -1,3 +1,3 @@
-mod graph;
-mod ids;
+pub mod graph;
+pub mod ids;
 pub mod memory;
