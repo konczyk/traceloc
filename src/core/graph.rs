@@ -59,7 +59,7 @@ impl GraphBuilder {
     }
 }
 
-struct Graph {
+pub struct Graph {
     node_count: usize,
     srcs: Vec<NodeId>,
     dsts: Vec<NodeId>,
@@ -127,7 +127,7 @@ impl<'a> Iterator for EdgeIter<'a> {
 
 #[derive(Debug, PartialEq)]
 pub struct EdgeRef {
-    dst: NodeId,
+    pub(crate) dst: NodeId,
     amount: u64,
     timestamp: u64,
 }

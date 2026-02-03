@@ -1,7 +1,7 @@
 use crate::core::memory::estimate_edge_memory;
 use crate::ingest::synthetic::{SyntheticConfig, generate};
 
-pub mod algo;
+pub mod analysis;
 pub mod core;
 pub mod ingest;
 

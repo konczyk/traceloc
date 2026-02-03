@@ -7,3 +7,6 @@ edition = "2024"
 anyhow = "1"
 csv = "1.4"
 rand = "0.9"
+
+[dev-dependencies]
+approx = "0.5"
