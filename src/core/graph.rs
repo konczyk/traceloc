@@ -127,8 +127,8 @@ impl<'a> Iterator for EdgeIter<'a> {
 
 #[derive(Debug, PartialEq)]
 pub struct EdgeRef {
-    pub(crate) dst: NodeId,
-    amount: u64,
+    pub dst: NodeId,
+    pub amount: u64,
     timestamp: u64,
 }
 

@@ -16,14 +16,19 @@ pub fn propagate(graph: &Graph, start: NodeId, max_hops: usize) -> HashMap<NodeI
             continue;
         }
 
+        let total_amount = graph.edges_from(node).map(|e| e.amount).sum::<u64>();
+        if total_amount == 0 {
+            continue;
+        }
         for edge in graph.edges_from(node) {
+            let dilution = edge.amount as f32 / total_amount as f32;
             match risk_map.get(&edge.dst) {
                 Some(r) if new_risk <= *r => continue,
                 _ => {
-                    risk_map.insert(edge.dst, new_risk);
+                    risk_map.insert(edge.dst, new_risk * dilution);
                 }
             }
-            visited.push_back((edge.dst, new_risk, hop + 1))
+            visited.push_back((edge.dst, new_risk * dilution, hop + 1))
         }
     }
 
@@ -98,5 +103,29 @@ mod tests {
         assert!(actual.get(&1).is_some());
         assert!(actual.get(&2).is_some());
         assert!(actual.get(&3).is_some());
+    }
+
+    #[test]
+    fn test_fan_out_dilution() {
+        let mut gb = GraphBuilder::new(3);
+        gb.add_edge(0, 1, 100, 3);
+        gb.add_edge(0, 2, 1, 3);
+        let g = gb.freeze();
+
+        let actual = propagate(&g, 0, 1);
+        assert_eq!(3, actual.len());
+        assert!(actual.get(&1).unwrap() > actual.get(&2).unwrap());
+    }
+
+    #[test]
+    fn test_zero_amounts() {
+        let mut gb = GraphBuilder::new(3);
+        gb.add_edge(0, 1, 0, 3);
+        gb.add_edge(0, 2, 0, 3);
+        let g = gb.freeze();
+
+        let actual = propagate(&g, 0, 1);
+        assert_eq!(1, actual.len());
+        assert!(actual.get(&0).is_some());
     }
 }
