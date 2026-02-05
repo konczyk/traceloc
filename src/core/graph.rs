@@ -129,7 +129,7 @@ impl<'a> Iterator for EdgeIter<'a> {
 pub struct EdgeRef {
     pub dst: NodeId,
     pub amount: u64,
-    timestamp: u64,
+    pub timestamp: u64,
 }
 
 impl EdgeRef {

@@ -8,11 +8,11 @@ const EPSILON: f32 = 1e-6;
 
 pub fn propagate(graph: &Graph, start: NodeId, max_hops: usize) -> HashMap<NodeId, f32> {
     let mut risk_map = HashMap::from([(start, INITIAL_RISK)]);
-    let mut visited = VecDeque::from([(start, INITIAL_RISK, 0)]);
+    let mut visited = VecDeque::from([(start, INITIAL_RISK, 0, None)]);
 
-    while let Some((node, risk, hop)) = visited.pop_front() {
+    while let Some((node, risk, hop, last_ts)) = visited.pop_front() {
         let new_risk = risk * DECAY;
-        if hop == max_hops || new_risk < EPSILON {
+        if hop == max_hops {
             continue;
         }
 
@@ -21,14 +21,26 @@ pub fn propagate(graph: &Graph, start: NodeId, max_hops: usize) -> HashMap<NodeI
             continue;
         }
         for edge in graph.edges_from(node) {
-            let dilution = edge.amount as f32 / total_amount as f32;
+            let mut edge_risk = new_risk;
+            edge_risk *= edge.amount as f32 / total_amount as f32;
+            edge_risk *= if let Some(ts) = last_ts {
+                let dt = edge.timestamp.saturating_sub(ts);
+                1.0 / ((1.0 + dt as f32) / (60 * 60 * 24) as f32)
+            } else {
+                1.0
+            };
+
+            if edge_risk < EPSILON {
+                continue;
+            }
+
             match risk_map.get(&edge.dst) {
-                Some(r) if new_risk <= *r => continue,
+                Some(r) if edge_risk <= *r => continue,
                 _ => {
-                    risk_map.insert(edge.dst, new_risk * dilution);
+                    risk_map.insert(edge.dst, edge_risk);
                 }
             }
-            visited.push_back((edge.dst, new_risk * dilution, hop + 1))
+            visited.push_back((edge.dst, edge_risk, hop + 1, Some(edge.timestamp)))
         }
     }
 
@@ -127,5 +139,44 @@ mod tests {
         let actual = propagate(&g, 0, 1);
         assert_eq!(1, actual.len());
         assert!(actual.get(&0).is_some());
+    }
+
+    #[test]
+    fn test_first_hop_unaffected_by_ts() {
+        let mut gb = GraphBuilder::new(3);
+        gb.add_edge(0, 1, 1, 3);
+        gb.add_edge(0, 2, 4, 3);
+        let g = gb.freeze();
+
+        let actual = propagate(&g, 0, 1);
+        assert_eq!(3, actual.len());
+        assert_relative_eq!(0.5 * (1f32 / 5f32), actual.get(&1).unwrap());
+    }
+
+    #[test]
+    fn test_short_vs_long_ts_gap() {
+        let mut gb = GraphBuilder::new(5);
+        gb.add_edge(0, 1, 1, 10);
+        gb.add_edge(0, 2, 1, 10);
+        gb.add_edge(1, 3, 1, 10);
+        gb.add_edge(2, 4, 1, 20);
+        let g = gb.freeze();
+
+        let actual = propagate(&g, 0, 2);
+        assert_eq!(5, actual.len());
+        assert!(actual.get(&3).unwrap() > actual.get(&4).unwrap());
+    }
+
+    #[test]
+    fn test_large_ts_gap_pruned() {
+        let mut gb = GraphBuilder::new(5);
+        gb.add_edge(0, 1, 1, 10);
+        gb.add_edge(0, 2, 1, 10);
+        gb.add_edge(1, 3, 1, 60 * 60 * 24 * 100000);
+        gb.add_edge(1, 4, 1, 10);
+        let g = gb.freeze();
+
+        let actual = propagate(&g, 0, 2);
+        assert_eq!(4, actual.len());
     }
 }
