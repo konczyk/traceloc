@@ -87,6 +87,10 @@ impl Graph {
     pub fn edges_from(&'_ self, src: NodeId) -> EdgeIter<'_> {
         EdgeIter::new(self, src)
     }
+
+    pub fn node_count(&self) -> usize {
+        self.node_count
+    }
 }
 
 pub struct EdgeIter<'a> {
@@ -171,13 +175,13 @@ mod tests {
 
     #[test]
     fn test_single_source_edges() {
-        let mut gb = GraphBuilder::new(3);
+        let mut gb = GraphBuilder::new(4);
         gb.add_edge(0, 1, 1, 2);
         gb.add_edge(0, 2, 2, 3);
         gb.add_edge(0, 3, 3, 4);
         let g = gb.freeze();
 
-        assert_eq!(vec![0, 3, 3, 3], g.offsets);
+        assert_eq!(vec![0, 3, 3, 3, 3], g.offsets);
         let mut iter = g.edges_from(0);
         assert_eq!(Some(EdgeRef::new(1, 1, 2)), iter.next());
         assert_eq!(Some(EdgeRef::new(2, 2, 3)), iter.next());
