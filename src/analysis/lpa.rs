@@ -1,5 +1,4 @@
-use crate::core::graph::{Graph, GraphBuilder};
-use std::collections::HashMap;
+use crate::core::graph::Graph;
 use std::mem::swap;
 
 pub fn label_propagation(graph: &Graph, max_iters: usize) -> Vec<u32> {
@@ -7,24 +6,45 @@ pub fn label_propagation(graph: &Graph, max_iters: usize) -> Vec<u32> {
     let mut next_labels = vec![0; labels.len()];
     for _ in 0..max_iters {
         let mut changed = false;
+        let mut seen_labels = Vec::with_capacity(3);
+        let mut counts = Vec::with_capacity(3);
         for src in 0..graph.node_count() {
             let mut new_label = labels[src];
-            let mut counts = HashMap::new();
-
+            seen_labels.clear();
+            counts.clear();
             for n in graph
                 .edges_from(src as u32)
                 .map(|e| e.dst)
                 .chain(graph.edges_to(src as u32))
             {
+                let mut seen = false;
                 let group = labels[n as usize];
-                counts.entry(group).and_modify(|cnt| *cnt += 1).or_insert(1);
-                let group_cnt = *counts.get(&group).unwrap_or(&0);
-                let prev_cnt = *counts.get(&new_label).unwrap_or(&0);
-
-                if group_cnt > prev_cnt || (group_cnt == prev_cnt && group < new_label) {
-                    new_label = group;
+                for i in 0..seen_labels.len() {
+                    if seen_labels[i] == group {
+                        counts[i] += 1;
+                        seen = true;
+                        break;
+                    }
+                }
+                if !seen {
+                    seen_labels.push(group);
+                    counts.push(1);
                 }
             }
+
+            if seen_labels.len() > 0 {
+                let mut max_idx = 0;
+                new_label = seen_labels[max_idx];
+                for i in 1..seen_labels.len() {
+                    if counts[i] > counts[max_idx]
+                        || (counts[i] == counts[max_idx] && seen_labels[i] < seen_labels[max_idx])
+                    {
+                        max_idx = i;
+                        new_label = seen_labels[i];
+                    }
+                }
+            }
+
             next_labels[src] = new_label;
             if labels[src] != new_label {
                 changed = true;
@@ -43,6 +63,7 @@ pub fn label_propagation(graph: &Graph, max_iters: usize) -> Vec<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::graph::GraphBuilder;
 
     #[test]
     fn test_no_edges() {
