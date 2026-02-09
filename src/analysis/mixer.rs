@@ -1,9 +1,21 @@
 use crate::core::graph::Graph;
 use crate::core::ids::NodeId;
 
+pub const DEG_THRESHOLD: u32 = 10;
+pub const DIVERSITY_THRESHOLD: u32 = 3;
+pub const WINDOW_SIZE: u64 = 3600;
+pub const LABEL_PROPAGATION_MAX_ITERS: usize = 20;
+
 pub struct DegreeStats {
     pub in_deg: u32,
     pub out_deg: u32,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct MixerSignal {
+    pub node: NodeId,
+    pub score: u32,
+    pub is_mixer: bool,
 }
 
 pub fn compute_degree_stats(graph: &Graph) -> Vec<DegreeStats> {
@@ -68,11 +80,45 @@ pub fn has_in_out_overlap(graph: &Graph, node: NodeId, dt: u64) -> bool {
     false
 }
 
+pub fn detect_mixers(
+    graph: &Graph,
+    labels: &[u32],
+    degree_stats: &[DegreeStats],
+) -> Vec<MixerSignal> {
+    let diversity = compute_label_diversity(graph, &labels);
+    let mut signals = Vec::with_capacity(graph.node_count());
+
+    for n in 0..graph.node_count() {
+        let mut score = 0;
+        if degree_stats[n].in_deg >= DEG_THRESHOLD {
+            score += 1;
+        }
+        if degree_stats[n].out_deg >= DEG_THRESHOLD {
+            score += 1;
+        }
+        if has_in_out_overlap(graph, n as u32, WINDOW_SIZE) {
+            score += 1;
+        }
+        if diversity[n] >= DIVERSITY_THRESHOLD {
+            score += 1;
+        }
+        signals.push(MixerSignal {
+            node: n as u32,
+            score,
+            is_mixer: score >= 3,
+        })
+    }
+    signals
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::core::graph::GraphBuilder;
     use crate::ingest::synthetic;
+    use crate::ingest::synthetic::{
+        bridge_node_graph, exchange_hub_graph, normal_user_graph, strong_mixer_graph,
+    };
 
     #[test]
     fn test_no_edges_degree_stats() {
@@ -217,5 +263,82 @@ mod tests {
 
         let diversity = compute_label_diversity(&g, &[0, 1]);
         assert_eq!(1, diversity[0]);
+    }
+
+    #[test]
+    fn test_normal_user() {
+        let g = normal_user_graph();
+        let labels = &[0, 0, 0];
+        let stats = compute_degree_stats(&g);
+
+        let mixers = detect_mixers(&g, labels, &stats);
+        let signal = mixers.iter().find(|m| m.node == 0).unwrap();
+        assert_eq!(
+            &MixerSignal {
+                node: 0,
+                score: 0,
+                is_mixer: false
+            },
+            signal
+        );
+    }
+
+    #[test]
+    fn test_bridge_node() {
+        let g = bridge_node_graph();
+        let labels = &[0, 1, 1, 1, 2, 2, 2];
+        let stats = compute_degree_stats(&g);
+
+        let mixers = detect_mixers(&g, labels, &stats);
+        let signal = mixers.iter().find(|m| m.node == 0).unwrap();
+        assert_eq!(
+            &MixerSignal {
+                node: 0,
+                score: 1,
+                is_mixer: false
+            },
+            signal
+        );
+    }
+
+    #[test]
+    fn test_exchange_hub() {
+        let g = exchange_hub_graph();
+        let labels = vec![0; 25];
+        let stats = compute_degree_stats(&g);
+
+        let mixers = detect_mixers(&g, &labels, &stats);
+        let signal = mixers.iter().find(|m| m.node == 0).unwrap();
+        assert_eq!(
+            &MixerSignal {
+                node: 0,
+                score: 2,
+                is_mixer: false
+            },
+            signal
+        );
+    }
+
+    #[test]
+    fn test_strong_mixer() {
+        let g = strong_mixer_graph();
+        let labels = vec![
+            0, // mixer
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // group A
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // group B
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // group C
+        ];
+        let stats = compute_degree_stats(&g);
+
+        let mixers = detect_mixers(&g, &labels, &stats);
+        let signal = mixers.iter().find(|m| m.node == 0).unwrap();
+        assert_eq!(
+            &MixerSignal {
+                node: 0,
+                score: 4,
+                is_mixer: true
+            },
+            signal
+        );
     }
 }
