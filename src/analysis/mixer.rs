@@ -17,6 +17,25 @@ pub fn compute_degree_stats(graph: &Graph) -> Vec<DegreeStats> {
     result
 }
 
+pub fn compute_label_diversity(graph: &Graph, labels: &[u32]) -> Vec<u32> {
+    let mut counts = vec![0; graph.node_count()];
+    let mut buf = vec![0; graph.node_count()];
+    for n in 0..graph.node_count() {
+        for label in graph
+            .edges_from(n as u32)
+            .map(|e| e.dst)
+            .chain(graph.edges_to(n as u32).map(|e| e.src))
+            .map(|node_id| labels[node_id as usize])
+        {
+            if buf[label as usize] < n + 1 {
+                counts[n] += 1;
+                buf[label as usize] = n + 1;
+            }
+        }
+    }
+    counts
+}
+
 pub fn has_in_out_overlap(graph: &Graph, node: NodeId, dt: u64) -> bool {
     let mut in_time = graph
         .edges_to(node)
@@ -145,5 +164,58 @@ mod tests {
         let g = gb.freeze();
 
         assert!(!has_in_out_overlap(&g, 0, 100));
+    }
+
+    #[test]
+    fn test_no_edges_label_diversity() {
+        let gb = GraphBuilder::new(2);
+        let g = gb.freeze();
+
+        assert_eq!(vec![0, 0], compute_label_diversity(&g, &[0, 1]));
+    }
+
+    #[test]
+    fn test_single_label_neighborhood() {
+        let mut gb = GraphBuilder::new(3);
+        gb.add_edge(0, 1, 2, 0);
+        gb.add_edge(0, 2, 2, 0);
+        let g = gb.freeze();
+
+        let diversity = compute_label_diversity(&g, &[0, 1, 1]);
+        assert_eq!(1, diversity[0]);
+    }
+
+    #[test]
+    fn test_multi_label_neighborhood() {
+        let mut gb = GraphBuilder::new(4);
+        gb.add_edge(0, 1, 2, 0);
+        gb.add_edge(0, 2, 2, 0);
+        gb.add_edge(0, 3, 2, 0);
+        let g = gb.freeze();
+
+        let diversity = compute_label_diversity(&g, &[0, 1, 2, 3]);
+        assert_eq!(3, diversity[0]);
+    }
+
+    #[test]
+    fn test_in_and_out_counted() {
+        let mut gb = GraphBuilder::new(3);
+        gb.add_edge(0, 2, 2, 0);
+        gb.add_edge(1, 0, 2, 0);
+        let g = gb.freeze();
+
+        let diversity = compute_label_diversity(&g, &[0, 1, 2]);
+        assert_eq!(2, diversity[0]);
+    }
+
+    #[test]
+    fn test_duplicate_neighbors_dont_inflate() {
+        let mut gb = GraphBuilder::new(2);
+        gb.add_edge(0, 1, 2, 0);
+        gb.add_edge(1, 0, 2, 0);
+        let g = gb.freeze();
+
+        let diversity = compute_label_diversity(&g, &[0, 1]);
+        assert_eq!(1, diversity[0]);
     }
 }
