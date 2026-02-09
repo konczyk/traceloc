@@ -15,7 +15,7 @@ pub fn label_propagation(graph: &Graph, max_iters: usize) -> Vec<u32> {
             for n in graph
                 .edges_from(src as u32)
                 .map(|e| e.dst)
-                .chain(graph.edges_to(src as u32))
+                .chain(graph.edges_to(src as u32).map(|e| e.src))
             {
                 let mut seen = false;
                 let group = labels[n as usize];

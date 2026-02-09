@@ -14,8 +14,8 @@ impl GraphBuilder {
     pub fn add_edge(&mut self, src: NodeId, dst: NodeId, amount: u64, timestamp: u64) {
         self.graph.srcs_out.push(src);
         self.graph.dsts.push(dst);
-        self.graph.amounts.push(amount);
-        self.graph.timestamps.push(timestamp);
+        self.graph.amounts_out.push(amount);
+        self.graph.timestamps_out.push(timestamp);
     }
 
     pub fn freeze(mut self) -> Graph {
@@ -42,10 +42,12 @@ impl GraphBuilder {
 
         buf.fill(0);
         self.graph.srcs_in = vec![0; self.graph.edge_count()];
+        self.graph.timestamps_in = vec![0; self.graph.edge_count()];
         for e in 0..self.graph.edge_count() {
             let dst = self.graph.dsts[e] as usize;
             let idx = self.graph.offsets_in[dst] + buf[dst];
             self.graph.srcs_in[idx] = self.graph.srcs_out[e];
+            self.graph.timestamps_in[idx] = self.graph.timestamps_out[e];
             buf[dst] += 1;
         }
 
@@ -73,8 +75,8 @@ impl GraphBuilder {
             if idx != e {
                 self.graph.srcs_out.swap(idx, e);
                 self.graph.dsts.swap(idx, e);
-                self.graph.amounts.swap(idx, e);
-                self.graph.timestamps.swap(idx, e);
+                self.graph.amounts_out.swap(idx, e);
+                self.graph.timestamps_out.swap(idx, e);
             } else {
                 e += 1;
             }
@@ -90,8 +92,9 @@ pub struct Graph {
     srcs_out: Vec<NodeId>,
     srcs_in: Vec<NodeId>,
     dsts: Vec<NodeId>,
-    amounts: Vec<u64>,
-    timestamps: Vec<u64>,
+    amounts_out: Vec<u64>,
+    timestamps_in: Vec<u64>,
+    timestamps_out: Vec<u64>,
     offsets_out: Vec<usize>,
     offsets_in: Vec<usize>,
 }
@@ -103,8 +106,9 @@ impl Graph {
             srcs_out: vec![],
             srcs_in: vec![],
             dsts: vec![],
-            amounts: vec![],
-            timestamps: vec![],
+            amounts_out: vec![],
+            timestamps_in: vec![],
+            timestamps_out: vec![],
             offsets_out: vec![0; node_count + 1],
             offsets_in: vec![0; node_count + 1],
         }
@@ -124,6 +128,14 @@ impl Graph {
 
     pub fn node_count(&self) -> usize {
         self.node_count
+    }
+
+    pub fn in_degree(&self, dst: NodeId) -> usize {
+        self.offsets_in[dst as usize + 1] - self.offsets_in[dst as usize]
+    }
+
+    pub fn out_degree(&self, src: NodeId) -> usize {
+        self.offsets_out[src as usize + 1] - self.offsets_out[src as usize]
     }
 }
 
@@ -146,11 +158,14 @@ impl<'a> IncomingEdgeIter<'a> {
 }
 
 impl<'a> Iterator for IncomingEdgeIter<'a> {
-    type Item = NodeId;
+    type Item = IncomingEdgeRef;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.start + self.next < self.end {
-            let result = Some(self.graph.srcs_in[self.start + self.next]);
+            let result = Some(IncomingEdgeRef::new(
+                self.graph.srcs_in[self.start + self.next],
+                self.graph.timestamps_in[self.start + self.next],
+            ));
             self.next += 1;
             result
         } else {
@@ -178,14 +193,14 @@ impl<'a> OutgoingEdgeIter<'a> {
 }
 
 impl<'a> Iterator for OutgoingEdgeIter<'a> {
-    type Item = EdgeRef;
+    type Item = OutgoingEdgeRef;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.start + self.next < self.end {
-            let result = Some(EdgeRef::new(
+            let result = Some(OutgoingEdgeRef::new(
                 self.graph.dsts[self.start + self.next],
-                self.graph.amounts[self.start + self.next],
-                self.graph.timestamps[self.start + self.next],
+                self.graph.amounts_out[self.start + self.next],
+                self.graph.timestamps_out[self.start + self.next],
             ));
             self.next += 1;
             result
@@ -196,19 +211,31 @@ impl<'a> Iterator for OutgoingEdgeIter<'a> {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct EdgeRef {
+pub struct OutgoingEdgeRef {
     pub dst: NodeId,
     pub amount: u64,
     pub timestamp: u64,
 }
 
-impl EdgeRef {
+impl OutgoingEdgeRef {
     pub fn new(dst: NodeId, amount: u64, timestamp: u64) -> Self {
         Self {
             dst,
             amount,
             timestamp,
         }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct IncomingEdgeRef {
+    pub src: NodeId,
+    pub timestamp: u64,
+}
+
+impl IncomingEdgeRef {
+    pub fn new(src: NodeId, timestamp: u64) -> Self {
+        Self { src, timestamp }
     }
 }
 
@@ -237,10 +264,10 @@ mod tests {
         let g = gb.freeze();
 
         assert_eq!(vec![0, 1, 1], g.offsets_out);
-        assert_eq!(Some(EdgeRef::new(1, 2, 3)), g.edges_from(0).next());
+        assert_eq!(Some(OutgoingEdgeRef::new(1, 2, 3)), g.edges_from(0).next());
         assert_eq!(None, g.edges_from(1).next());
 
-        assert_eq!(Some(0), g.edges_to(1).next());
+        assert_eq!(Some(IncomingEdgeRef::new(0, 3)), g.edges_to(1).next());
         assert_eq!(None, g.edges_to(0).next());
     }
 
@@ -254,9 +281,9 @@ mod tests {
 
         assert_eq!(vec![0, 3, 3, 3, 3], g.offsets_out);
         let mut iter = g.edges_from(0);
-        assert_eq!(Some(EdgeRef::new(1, 1, 2)), iter.next());
-        assert_eq!(Some(EdgeRef::new(2, 2, 3)), iter.next());
-        assert_eq!(Some(EdgeRef::new(3, 3, 4)), iter.next());
+        assert_eq!(Some(OutgoingEdgeRef::new(1, 1, 2)), iter.next());
+        assert_eq!(Some(OutgoingEdgeRef::new(2, 2, 3)), iter.next());
+        assert_eq!(Some(OutgoingEdgeRef::new(3, 3, 4)), iter.next());
         assert_eq!(None, iter.next());
     }
 
@@ -270,9 +297,9 @@ mod tests {
 
         assert_eq!(vec![0, 3, 3, 3, 3], g.offsets_in);
         let mut iter = g.edges_to(0);
-        assert_eq!(Some(1), iter.next());
-        assert_eq!(Some(2), iter.next());
-        assert_eq!(Some(3), iter.next());
+        assert_eq!(Some(IncomingEdgeRef::new(1, 2)), iter.next());
+        assert_eq!(Some(IncomingEdgeRef::new(2, 3)), iter.next());
+        assert_eq!(Some(IncomingEdgeRef::new(3, 4)), iter.next());
         assert_eq!(None, iter.next());
     }
 
@@ -288,25 +315,25 @@ mod tests {
         assert_eq!(vec![0, 2, 3, 4], g.offsets_out);
         assert_eq!(vec![0, 1, 2, 4], g.offsets_in);
         let mut iter = g.edges_from(0);
-        assert_eq!(Some(EdgeRef::new(2, 7, 8)), iter.next());
-        assert_eq!(Some(EdgeRef::new(1, 3, 4)), iter.next());
+        assert_eq!(Some(OutgoingEdgeRef::new(2, 7, 8)), iter.next());
+        assert_eq!(Some(OutgoingEdgeRef::new(1, 3, 4)), iter.next());
         assert_eq!(None, iter.next());
         let mut iter = g.edges_from(1);
-        assert_eq!(Some(EdgeRef::new(2, 5, 6)), iter.next());
+        assert_eq!(Some(OutgoingEdgeRef::new(2, 5, 6)), iter.next());
         assert_eq!(None, iter.next());
         let mut iter = g.edges_from(2);
-        assert_eq!(Some(EdgeRef::new(0, 1, 2)), iter.next());
+        assert_eq!(Some(OutgoingEdgeRef::new(0, 1, 2)), iter.next());
         assert_eq!(None, iter.next());
 
         let mut iter = g.edges_to(0);
-        assert_eq!(Some(2), iter.next());
+        assert_eq!(Some(IncomingEdgeRef::new(2, 2)), iter.next());
         assert_eq!(None, iter.next());
         let mut iter = g.edges_to(1);
-        assert_eq!(Some(0), iter.next());
+        assert_eq!(Some(IncomingEdgeRef::new(0, 4)), iter.next());
         assert_eq!(None, iter.next());
         let mut iter = g.edges_to(2);
-        assert_eq!(Some(0), iter.next());
-        assert_eq!(Some(1), iter.next());
+        assert_eq!(Some(IncomingEdgeRef::new(0, 8)), iter.next());
+        assert_eq!(Some(IncomingEdgeRef::new(1, 6)), iter.next());
         assert_eq!(None, iter.next());
     }
 }
