@@ -14,7 +14,7 @@ pub struct DegreeStats {
 #[derive(Debug, PartialEq)]
 pub struct MixerSignal {
     pub node: NodeId,
-    pub score: u32,
+    pub score: u8,
     pub is_mixer: bool,
 }
 
